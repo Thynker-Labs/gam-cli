@@ -15,4 +15,4 @@ rm -rf "${CLONE_DIR}"
 git clone --depth 1 "${REPO}" "${CLONE_DIR}"
 
 echo "Running installer..."
-"${CLONE_DIR}/install.sh" "$@"
+exec sh "${CLONE_DIR}/install.sh" "$@"
