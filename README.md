@@ -94,7 +94,7 @@ The `gam` launcher is placed in `~/.local/bin` and added to `PATH` in your shell
 1. **Clone the repository**
 
    ```bash
-   git clone https://github.com/YOUR_USER/gam-cli.git
+   git clone https://github.com/Thynker-Labs/gam-cli.git
    cd gam-cli
    ```
 
