@@ -25,7 +25,7 @@ if [ ! -f "${SCRIPT_DIR}/requirements.txt" ] || [ ! -f "${SCRIPT_DIR}/gam-cli.py
   if command -v git >/dev/null 2>&1; then
     rm -rf "${CLONE_DIR}"
     git clone --depth 1 "${REPO}" "${CLONE_DIR}"
-    exec "${CLONE_DIR}/install.sh" "$@"
+    exec sh "${CLONE_DIR}/install.sh" "$@"
   fi
   echo "Error: Must run install.sh from the gam-cli project directory."
   echo "  cd /path/to/gam-cli && ./install.sh"
