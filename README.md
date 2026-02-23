@@ -27,7 +27,7 @@ Supports **JSON output**, **date filters**, **inventory presets** (run-of-site, 
 **Linux / macOS** — use the install script:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Thynker-Labs/gam-cli/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/Thynker-Labs/gam-cli/master/install.sh | sh
 ```
 
 Or clone and run locally:
