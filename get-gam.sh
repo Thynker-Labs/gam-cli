@@ -7,7 +7,7 @@
 #
 set -e
 
-REPO="${GAM_CLI_REPO:-https://github.com/YOUR_USER/gam-cli.git}"
+REPO="${GAM_CLI_REPO:-https://github.com/Thynker-Labs/gam-cli.git}"
 CLONE_DIR="${HOME}/.gam-cli-src"
 
 echo "Cloning gam-cli from ${REPO}..."

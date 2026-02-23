@@ -21,7 +21,7 @@ fi
 if [ ! -f "${SCRIPT_DIR}/requirements.txt" ] || [ ! -f "${SCRIPT_DIR}/gam-cli.py" ]; then
   echo "Error: Must run install.sh from the gam-cli project directory."
   echo "  cd /path/to/gam-cli && ./install.sh"
-  echo "Or: git clone https://github.com/YOUR_USER/gam-cli.git && cd gam-cli && ./install.sh"
+  echo "Or: git clone https://github.com/Thynker-Labs/gam-cli.git && cd gam-cli && ./install.sh"
   exit 1
 fi
 
