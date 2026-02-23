@@ -17,8 +17,16 @@ else
   SCRIPT_DIR="$(pwd)"
 fi
 
-# Validate project directory
+# Validate project directory; if missing, clone and re-exec (bootstrap for "curl | sh")
 if [ ! -f "${SCRIPT_DIR}/requirements.txt" ] || [ ! -f "${SCRIPT_DIR}/gam-cli.py" ]; then
+  REPO="${GAM_CLI_REPO:-https://github.com/Thynker-Labs/gam-cli.git}"
+  CLONE_DIR="${HOME}/.gam-cli-src"
+  echo "Project files not found. Cloning from ${REPO}..."
+  if command -v git >/dev/null 2>&1; then
+    rm -rf "${CLONE_DIR}"
+    git clone --depth 1 "${REPO}" "${CLONE_DIR}"
+    exec "${CLONE_DIR}/install.sh" "$@"
+  fi
   echo "Error: Must run install.sh from the gam-cli project directory."
   echo "  cd /path/to/gam-cli && ./install.sh"
   echo "Or: git clone https://github.com/Thynker-Labs/gam-cli.git && cd gam-cli && ./install.sh"
