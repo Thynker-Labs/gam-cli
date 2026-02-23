@@ -165,6 +165,7 @@ def parse_date(s):
 def parse_opts(args):
     """Parse common CLI options from args list."""
     opts = {
+        "config": None,
         "limit": 10,
         "order_id": None,
         "preset": None,
@@ -176,7 +177,10 @@ def parse_opts(args):
     }
     i = 1
     while i < len(args):
-        if args[i] in ("--limit", "-l") and i + 1 < len(args):
+        if args[i] in ("--config", "-c") and i + 1 < len(args):
+            opts["config"] = args[i + 1]
+            i += 2
+        elif args[i] in ("--limit", "-l") and i + 1 < len(args):
             opts["limit"] = int(args[i + 1])
             i += 2
         elif args[i] == "--order-id" and i + 1 < len(args):
@@ -420,32 +424,35 @@ class GAMService:
         ]
 
     def _get_report_credentials_path(self):
-        """Resolve path to service account JSON (same logic as Node.js getClientOptions)."""
+        """Resolve path to service account JSON - same as Node path.resolve(process.cwd(), path)."""
         path = self.raw_config["ad_manager"].get("path_to_private_key_file")
         if not path:
             return None
         if os.path.isabs(path):
             return path if os.path.exists(path) else None
-        # Try cwd first (like Node path.resolve(process.cwd(), path))
-        resolved = os.path.join(os.getcwd(), path)
-        if os.path.exists(resolved):
-            return resolved
-        # Fallback: config dir (~/.gam-cli)
-        alt = os.path.join(os.path.dirname(CONFIG_FILE), os.path.basename(path))
-        return alt if os.path.exists(alt) else None
+        # Node uses path.resolve(process.cwd(), path) - relative to cwd
+        resolved = os.path.normpath(os.path.join(os.getcwd(), path))
+        return resolved if os.path.exists(resolved) else None
 
     def _get_metrics_via_report(self, dimensions, metrics_list):
         """Run report via ReportServiceClient (same API as Node.js). Returns {id_str: {impressions, clicks}}."""
         if not dimensions or not metrics_list:
             return {}
+        creds_path = self._get_report_credentials_path()
+        if not creds_path:
+            if os.environ.get("GAM_DEBUG"):
+                print("Report: No credentials path (path_to_private_key_file not found)", file=sys.stderr)
+            return {}
         try:
             from google.ads import admanager_v1
+            from google.oauth2 import service_account
 
-            creds_path = self._get_report_credentials_path()
-            if creds_path:
-                client = admanager_v1.ReportServiceClient.from_service_account_file(creds_path)
-            else:
-                client = admanager_v1.ReportServiceClient()
+            # Use same credentials as Node - service account with Ad Manager scope
+            credentials = service_account.Credentials.from_service_account_file(
+                creds_path,
+                scopes=["https://www.googleapis.com/auth/admanager"],
+            )
+            client = admanager_v1.ReportServiceClient(credentials=credentials)
 
             parent = f"networks/{self.network_code}"
             report = admanager_v1.Report(
@@ -465,31 +472,35 @@ class GAMService:
             if not result_name:
                 return {}
             metrics_map = {}
-            for response in client.fetch_report_result_rows(name=result_name):
-                for row in getattr(response, "rows", []) or []:
-                    dims = getattr(row, "dimension_values", None) or []
-                    if not dims:
-                        continue
-                    d0 = dims[0]
-                    id_val = getattr(d0, "int_value", None) or getattr(d0, "string_value", None)
-                    if id_val is None:
-                        continue
-                    id_str = str(id_val)
-                    vals = []
-                    mvg = getattr(row, "metric_value_groups", None) or []
-                    if mvg:
-                        pv = getattr(mvg[0], "primary_values", None) or []
-                        vals = list(pv) if pv else []
-                    impressions = int(getattr(vals[0], "int_value", None) or getattr(vals[0], "string_value", None) or 0) if len(vals) > 0 else 0
-                    clicks = int(getattr(vals[1], "int_value", None) or getattr(vals[1], "string_value", None) or 0) if len(vals) > 1 else 0
-                    if id_str not in metrics_map:
-                        metrics_map[id_str] = {"impressions": 0, "clicks": 0}
-                    metrics_map[id_str]["impressions"] += impressions
-                    metrics_map[id_str]["clicks"] += clicks
+            # Pager yields rows directly, not response pages
+            for row in client.fetch_report_result_rows(name=result_name):
+                dims = getattr(row, "dimension_values", None) or []
+                if not dims:
+                    continue
+                d0 = dims[0]
+                id_val = getattr(d0, "int_value", None) or getattr(d0, "string_value", None)
+                if id_val is None:
+                    continue
+                id_str = str(id_val)
+                vals = []
+                mvg = getattr(row, "metric_value_groups", None) or []
+                if mvg:
+                    pv = getattr(mvg[0], "primary_values", None) or []
+                    vals = list(pv) if pv else []
+                impressions = int(getattr(vals[0], "int_value", None) or getattr(vals[0], "string_value", None) or 0) if len(vals) > 0 else 0
+                clicks = int(getattr(vals[1], "int_value", None) or getattr(vals[1], "string_value", None) or 0) if len(vals) > 1 else 0
+                if id_str not in metrics_map:
+                    metrics_map[id_str] = {"impressions": 0, "clicks": 0}
+                metrics_map[id_str]["impressions"] += impressions
+                metrics_map[id_str]["clicks"] += clicks
             return metrics_map
         except Exception as e:
+            err_msg = str(e)
             if os.environ.get("GAM_DEBUG"):
-                print(f"Report error: {e}", file=sys.stderr)
+                import traceback
+                traceback.print_exc(file=sys.stderr)
+            else:
+                print(f"Warning: Metrics report failed ({err_msg[:100]}). Use GAM_DEBUG=1 for details.", file=sys.stderr)
             return {}
 
     def _get_order_metrics(self, order_ids):
@@ -734,7 +745,7 @@ def main():
     end_dt = opts["end"] or (start_dt + datetime.timedelta(days=7))
 
     try:
-        gam = GAMService()
+        gam = GAMService(config_path=opts["config"])
 
         if cmd == "user":
             user = gam.get_user()

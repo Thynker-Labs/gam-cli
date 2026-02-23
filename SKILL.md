@@ -1,73 +1,66 @@
-# SKILL.md - GAM CLI Skill
+---
+name: gam-cli
+description: Work with the GAM CLI (Google Ad Manager Command Line Tool). Use when modifying gam-cli, extending commands, debugging Ad Manager API integration, or understanding orders, line items, inventory forecasts, and report metrics.
+---
+
+# GAM CLI Development
 
 ## Overview
 
-This skill provides a CLI for Google Ad Manager (GAM) operations.
+GAM CLI is a Python tool for Google Ad Manager. Main entry: `gam-cli.py`. Config lives at `~/.gam-cli/config.yaml`.
 
-## Requirements
+## Architecture
 
-- Node.js 18+
-- npm or yarn
-- Google Ad Manager service account credentials
+- **SOAP API** (`googleads`): UserService, OrderService, LineItemService, NetworkService, CreativeService, ForecastService
+- **REST API** (`google.ads.admanager_v1`): ReportServiceClient for impressions/clicks (requires `path_to_private_key_file`)
+- **Config**: YAML with `ad_manager.network_code`, `ad_manager.path_to_private_key_file`
 
-## Installation
+## Key Structures
 
-```bash
-cd gam-cli
-npm install
-npm link
-```
-
-## Configuration
-
-Create a `gam.yaml` file:
+### Config Format
 
 ```yaml
 ad_manager:
-  application_name: "Your App Name"
-  network_code: "YOUR_NETWORK_CODE"
-  path_to_private_key_file: "/path/to/service-account.json"
+  application_name: "GAM App CLI"
+  network_code: "127377506"
+  path_to_private_key_file: "creds.json"  # relative to cwd or absolute
 ```
 
-Initialize:
+### CLI Option Parsing
+
+`parse_opts(args)` extracts: `limit`, `order_id`, `preset`, `start`, `end`, `status`, `json`, `debug`.
+
+### Inventory Presets
+
+`INVENTORY_PRESETS`: `run-of-site` (all sizes), `desktop` (970x250, 300x250, etc.), `mobile` (320x50, etc.).
+
+### Order Status Mapping
+
+`ORDER_STATUS_MAP` maps CLI aliases (e.g. `delivering`, `approved`) to GAM status strings (e.g. `APPROVED`).
+
+## Adding New Commands
+
+1. Implement method in `GAMService` (e.g. `get_xxx()`).
+2. Add `elif cmd == "xxx":` in `main()` with output handling (table or JSON).
+3. Add option parsing in `parse_opts()` if needed.
+4. Update module docstring and README.
+
+## Data Helpers
+
+- `_attr(obj, key, default)` — Safe attribute access for SOAP/dict objects
+- `_format_datetime(obj)` — GAM DateTime → `YYYY-MM-DD`
+- `parse_date(s)` — Parses `YYYY-MM-DD` or `DDMMYYYY`
+- `format_table(headers, rows)` — Prints aligned table
+
+## Error Handling
+
+- `log_error()`, `exit_with_error()` — Write to `~/.gam-cli/errors.log`
+- Set `GAM_DEBUG=1` for tracebacks when report/metrics fail
+
+## Testing
 
 ```bash
-gam init gam.yaml
+gam user          # Quick connectivity check
+gam orders -l 1   # Minimal data fetch
+GAM_DEBUG=1 gam orders  # Debug report/metrics
 ```
-
-## Commands
-
-| Command | Description |
-|---------|-------------|
-| `gam user` | Show current GAM user |
-| `gam orders` | List orders |
-| `gam line-items` | List line items |
-| `gam networks` | List available networks |
-| `gam creatives` | List creatives |
-
-## Examples
-
-```bash
-# Check connection
-gam user
-
-# List recent orders
-gam orders -l 20
-
-# Get line items for specific order
-gam line-items --order-id 123456
-
-# Get all networks
-gam networks --json
-```
-
-## Options
-
-- `-l, --limit <num>` - Limit results
-- `--order-id <id>` - Filter by order ID
-- `--status <status>` - Filter by status
-- `--json` - JSON output
-
-## Troubleshooting
-
-Check error logs at: `~/.gam-cli/errors.log`
