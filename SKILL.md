@@ -28,7 +28,9 @@ ad_manager:
 
 ### CLI Option Parsing
 
-`parse_opts(args)` extracts: `limit`, `order_id`, `preset`, `start`, `end`, `status`, `json`, `debug`.
+`parse_opts(args)` extracts: `config`, `limit`, `order_id`, `preset`, `start`, `end`, `status`, `metrics_range`, `json`, `debug`.
+
+`--metrics-range` supports: `30d`, `90d`, `365d`, `mtd`, `ytd` (default: `365d`).
 
 ### Inventory Presets
 
@@ -37,6 +39,16 @@ ad_manager:
 ### Order Status Mapping
 
 `ORDER_STATUS_MAP` maps CLI aliases (e.g. `delivering`, `approved`) to GAM status strings (e.g. `APPROVED`).
+
+### Metrics Range Mapping
+
+`METRICS_RANGE_MAP` maps CLI values to GAM relative ranges:
+
+- `30d` -> `LAST_30_DAYS`
+- `90d` -> `LAST_90_DAYS`
+- `365d` -> `LAST_365_DAYS`
+- `mtd` -> `MONTH_TO_DATE`
+- `ytd` -> `YEAR_TO_DATE`
 
 ## Adding New Commands
 
@@ -51,6 +63,7 @@ ad_manager:
 - `_format_datetime(obj)` — GAM DateTime → `YYYY-MM-DD`
 - `parse_date(s)` — Parses `YYYY-MM-DD` or `DDMMYYYY`
 - `format_table(headers, rows)` — Prints aligned table
+- `line-items` table includes a `Goal` column (goal units + unit type)
 
 ## Error Handling
 
@@ -62,5 +75,7 @@ ad_manager:
 ```bash
 gam user          # Quick connectivity check
 gam orders -l 1   # Minimal data fetch
+gam orders --metrics-range ytd -l 1
+gam line-items --order-id 12345 --metrics-range 90d
 GAM_DEBUG=1 gam orders  # Debug report/metrics
 ```

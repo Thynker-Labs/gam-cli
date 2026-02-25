@@ -19,6 +19,7 @@ Options:
   --start <date>            Start date (DDMMYYYY or YYYY-MM-DD)
   --end <date>              End date (DDMMYYYY or YYYY-MM-DD)
   --status <status>         Filter by status (for orders)
+  --metrics-range <range>   Metrics date range: 30d, 90d, 365d, mtd, ytd
   --json                    Output as JSON
   --debug                   Show debug info (for troubleshooting)
 
@@ -27,6 +28,7 @@ Examples:
   gam user
   gam orders --limit 20
   gam line-items --order-id 12345
+  gam line-items --order-id 12345 --metrics-range 90d
   gam inventory --start 2026-02-24 --end 2026-03-10
   gam networks
   gam creatives --json
@@ -85,6 +87,16 @@ INVENTORY_PRESETS = {
         ],
     },
 }
+
+# Reporting windows for order/line-item metrics.
+METRICS_RANGE_MAP = {
+    "30d": "LAST_30_DAYS",
+    "90d": "LAST_90_DAYS",
+    "365d": "LAST_365_DAYS",
+    "mtd": "MONTH_TO_DATE",
+    "ytd": "YEAR_TO_DATE",
+}
+DEFAULT_METRICS_RANGE = "365d"
 
 
 def ensure_config_dir():
@@ -172,6 +184,7 @@ def parse_opts(args):
         "start": None,
         "end": None,
         "status": None,
+        "metrics_range": DEFAULT_METRICS_RANGE,
         "json": False,
         "debug": False,
     }
@@ -198,6 +211,9 @@ def parse_opts(args):
         elif args[i] == "--status" and i + 1 < len(args):
             opts["status"] = args[i + 1]
             i += 2
+        elif args[i] == "--metrics-range" and i + 1 < len(args):
+            opts["metrics_range"] = str(args[i + 1]).strip().lower()
+            i += 2
         elif args[i] == "--json":
             opts["json"] = True
             i += 1
@@ -207,6 +223,17 @@ def parse_opts(args):
         else:
             i += 1
     return opts
+
+
+def to_metrics_relative_range(metrics_range):
+    """Map CLI metrics range to GAM relative date range."""
+    key = (metrics_range or DEFAULT_METRICS_RANGE).strip().lower()
+    if key not in METRICS_RANGE_MAP:
+        allowed = ", ".join(METRICS_RANGE_MAP.keys())
+        raise ValueError(
+            f"Invalid --metrics-range '{metrics_range}'. Allowed values: {allowed}"
+        )
+    return METRICS_RANGE_MAP[key]
 
 
 # --- Core Service Logic ---
@@ -258,7 +285,7 @@ class GAMService:
             pass
         return None
 
-    def get_orders(self, limit=10, status=None):
+    def get_orders(self, limit=10, status=None, metrics_range=DEFAULT_METRICS_RANGE):
         """List orders with optional status filter."""
         order_service = self.client.GetService("OrderService", version="v202511")
         statement = ad_manager.StatementBuilder()
@@ -315,14 +342,14 @@ class GAMService:
 
         order_ids = [o["id"] for o in orders if o["id"] != "N/A"]
         if order_ids:
-            metrics = self._get_order_metrics(order_ids)
+            metrics = self._get_order_metrics(order_ids, metrics_range)
             for o in orders:
                 m = metrics.get(str(o["id"]), {})
                 o["impressions"] = m.get("impressions", 0)
                 o["clicks"] = m.get("clicks", 0)
         return orders
 
-    def get_line_items(self, order_id=None, limit=10):
+    def get_line_items(self, order_id=None, limit=10, metrics_range=DEFAULT_METRICS_RANGE):
         """List line items, optionally filtered by order ID."""
         line_item_service = self.client.GetService(
             "LineItemService", version="v202511"
@@ -366,6 +393,10 @@ class GAMService:
                 "endDate": _format_datetime(_attr(li, "endDateTime")),
                 "goalUnits": goal_units,
                 "goalUnitType": goal_unit_type,
+                "goal": (
+                    f"{goal_units:,} {'Clicks' if 'CLICK' in str(goal_unit_type).upper() else 'Imps'}"
+                    if goal_units is not None else "-"
+                ),
                 "impressions": 0,
                 "clicks": 0,
                 "ctr": "-",
@@ -373,7 +404,7 @@ class GAMService:
             })
         line_item_ids = [it["id"] for it in items if it["id"] != "N/A"]
         if line_item_ids:
-            metrics = self._get_line_item_metrics(line_item_ids)
+            metrics = self._get_line_item_metrics(line_item_ids, metrics_range)
             for it in items:
                 m = metrics.get(str(it["id"]), {})
                 imp = m.get("impressions", 0)
@@ -434,7 +465,7 @@ class GAMService:
         resolved = os.path.normpath(os.path.join(os.getcwd(), path))
         return resolved if os.path.exists(resolved) else None
 
-    def _get_metrics_via_report(self, dimensions, metrics_list):
+    def _get_metrics_via_report(self, dimensions, metrics_list, metrics_range=DEFAULT_METRICS_RANGE):
         """Run report via ReportServiceClient (same API as Node.js). Returns {id_str: {impressions, clicks}}."""
         if not dimensions or not metrics_list:
             return {}
@@ -461,7 +492,7 @@ class GAMService:
                     dimensions=dimensions,
                     metrics=metrics_list,
                     report_type="HISTORICAL",
-                    date_range={"relative": "LAST_90_DAYS"},
+                    date_range={"relative": to_metrics_relative_range(metrics_range)},
                 ),
                 visibility=admanager_v1.Report.Visibility.HIDDEN,
             )
@@ -503,21 +534,21 @@ class GAMService:
                 print(f"Warning: Metrics report failed ({err_msg[:100]}). Use GAM_DEBUG=1 for details.", file=sys.stderr)
             return {}
 
-    def _get_order_metrics(self, order_ids):
-        """Get impressions and clicks per order (LAST_90_DAYS) via ReportServiceClient."""
+    def _get_order_metrics(self, order_ids, metrics_range=DEFAULT_METRICS_RANGE):
+        """Get impressions and clicks per order via ReportServiceClient."""
         if not order_ids:
             return {}
         metrics = self._get_metrics_via_report(
-            ["ORDER_ID"], ["AD_SERVER_IMPRESSIONS", "AD_SERVER_CLICKS"]
+            ["ORDER_ID"], ["AD_SERVER_IMPRESSIONS", "AD_SERVER_CLICKS"], metrics_range
         )
         return {str(oid): metrics.get(str(oid), {"impressions": 0, "clicks": 0}) for oid in order_ids}
 
-    def _get_line_item_metrics(self, line_item_ids):
-        """Get impressions and clicks per line item (LAST_90_DAYS) via ReportServiceClient."""
+    def _get_line_item_metrics(self, line_item_ids, metrics_range=DEFAULT_METRICS_RANGE):
+        """Get impressions and clicks per line item via ReportServiceClient."""
         if not line_item_ids:
             return {}
         metrics = self._get_metrics_via_report(
-            ["LINE_ITEM_ID"], ["AD_SERVER_IMPRESSIONS", "AD_SERVER_CLICKS"]
+            ["LINE_ITEM_ID"], ["AD_SERVER_IMPRESSIONS", "AD_SERVER_CLICKS"], metrics_range
         )
         return {str(lid): metrics.get(str(lid), {"impressions": 0, "clicks": 0}) for lid in line_item_ids}
 
@@ -759,7 +790,7 @@ def main():
                 print(f"Role: {user['roleName']}")
 
         elif cmd == "orders":
-            orders = gam.get_orders(opts["limit"], opts["status"])
+            orders = gam.get_orders(opts["limit"], opts["status"], opts["metrics_range"])
             if opts["json"]:
                 print(json.dumps(orders, indent=2))
             else:
@@ -789,7 +820,7 @@ def main():
             order_id = opts["order_id"]
             if order_id and order_id.isdigit():
                 order_id = int(order_id)
-            line_items = gam.get_line_items(order_id, opts["limit"])
+            line_items = gam.get_line_items(order_id, opts["limit"], opts["metrics_range"])
             if opts["json"]:
                 print(json.dumps(line_items, indent=2))
             else:
@@ -798,7 +829,7 @@ def main():
                     print("No line items found.")
                 else:
                     format_table(
-                        ["ID", "Name", "Order ID", "Status", "Type", "Start", "End", "Impressions", "Clicks", "CTR", "Progress"],
+                        ["ID", "Name", "Order ID", "Status", "Type", "Start", "End", "Goal", "Impressions", "Clicks", "CTR", "Progress"],
                         [
                             [
                                 li["id"],
@@ -808,6 +839,7 @@ def main():
                                 li["lineItemType"],
                                 li["startDate"],
                                 li["endDate"],
+                                li.get("goal", "-"),
                                 f"{li.get('impressions', 0):,}",
                                 f"{li.get('clicks', 0):,}",
                                 li.get("ctr", "-"),

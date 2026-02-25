@@ -11,12 +11,12 @@ A lightweight command-line tool for **Google Ad Manager** (GAM). Query orders, l
 | `gam init` | Initialize configuration from a YAML file |
 | `gam user` | Show current user and connection info |
 | `gam orders` | List orders with impressions, clicks, and status |
-| `gam line-items` | List line items with optional order filter |
+| `gam line-items` | List line items with optional order filter (includes Goal column) |
 | `gam inventory` | Show inventory forecast (available, forecasted, reserved) |
 | `gam networks` | List available Ad Manager networks |
 | `gam creatives` | List creatives |
 
-Supports **JSON output**, **date filters**, **inventory presets** (run-of-site, desktop, mobile), and **status filters** for orders.
+Supports **JSON output**, **date filters**, **inventory presets** (run-of-site, desktop, mobile), **status filters** for orders, and configurable **metrics ranges** for delivery metrics.
 
 ---
 
@@ -194,6 +194,7 @@ gam -c ~/work-gam.yaml orders
 | `--start` | Start date (`YYYY-MM-DD` or `DDMMYYYY`) |
 | `--end` | End date |
 | `--status` | Filter orders by status |
+| `--metrics-range` | Metrics window for impressions/clicks: `30d`, `90d`, `365d`, `mtd`, `ytd` (default: `365d`) |
 | `--json` | Output as JSON |
 | `--debug` | Show debug info |
 
@@ -210,10 +211,12 @@ gam user
 # Orders
 gam orders --limit 20
 gam orders --status delivering --json
+gam orders --status delivering --metrics-range ytd
 
 # Line items
 gam line-items
 gam line-items --order-id 12345 --limit 50
+gam line-items --order-id 12345 --metrics-range 90d
 
 # Inventory
 gam inventory
